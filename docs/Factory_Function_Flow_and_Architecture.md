@@ -32,7 +32,7 @@ and how contracts interact with each other — from deployment to settlement.
 │           │ knows which implementations      │                                   │
 │           │ to use for each deal             │                                   │
 │           └──────────────┬──────────────────┘                                   │
-│                          ▼                                                      │
+│                          ▼                                                      │ 
 │   Step 4: ┌─────────────────────────────────┐                                   │
 │           │ TREXGateway                      │                                   │
 │           │ "front door" — access control    │                                   │
