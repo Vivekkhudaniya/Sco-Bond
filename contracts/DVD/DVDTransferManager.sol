@@ -244,6 +244,10 @@ contract DVDTransferManager is Ownable {
         address _counterpart,
         address _token2,
         uint256 _token2Amount) external {
+        require(
+            isTREXAgent(_token1, msg.sender) ||
+            isTREXAgent(_token2, msg.sender)
+            , "only TREX agents can initiate transfers");
         require(IERC20(_token1).balanceOf(msg.sender) >= _token1Amount, "Not enough tokens in balance");
         require(
             IERC20(_token1).allowance(msg.sender, address(this)) >= _token1Amount
@@ -312,10 +316,9 @@ contract DVDTransferManager is Ownable {
         IERC20 token1Contract = IERC20(token1.token);
         IERC20 token2Contract = IERC20(token2.token);
         require (
-            msg.sender == token2.counterpart ||
             isTREXAgent(token1.token, msg.sender) ||
             isTREXAgent(token2.token, msg.sender)
-            , "transfer has to be done by the counterpart or by owner");
+            , "only TREX agents can execute transfers");
         require(
             token2Contract.balanceOf(token2.counterpart) >= token2.amount
             , "Not enough tokens in balance");
