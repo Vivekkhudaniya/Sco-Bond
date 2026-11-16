@@ -11,8 +11,8 @@ Each step includes the function signature, parameters with context, and the use 
 |---|---|---|
 | **Platform Admin** | The deployer wallet | Deploys all contracts, owns the platform, creates deals |
 | **Registrar** | IR Agent | Whitelists investor wallets (adds/removes from identity registry) |
-| **B&D Agent** | Token Agent | Mints bonds, pauses/unpauses token, initiates DVD transfers |
-| **Investors** | End users | Receive bonds, provide cash, execute DVD swaps |
+| **B&D Agent** | Token Agent | Mints bonds, pauses/unpauses token, initiates and settles DVD transfers |
+| **Investors** | End users | Receive bonds, provide cash, approve DVD allowance (never call DVD directly) |
 
 ---
 
@@ -322,9 +322,9 @@ No parameters needed.
        |                                        |
        |         (offer is pending)             |
        |                                        |
-       |                    "Deal, here's       |
-       |                     my 100 EURd"       |
-       |  <----- takeDVDTransfer() <----------  |
+       |         B&D Agent settles              |
+       |         (agent-only — our change)     |
+       |  ----- takeDVDTransfer() ---------->  |
        |                                        |
        |     ATOMIC SWAP (one transaction):     |
        |     100 bonds  ──> Investor            |
@@ -546,7 +546,7 @@ dvd.initiateDVDTransfer(
 
 ---
 
-### Step 21: Investors execute DVD transfers (atomic swap)
+### Step 21: B&D Agent settles DVD transfers (atomic swap)
 
 **Function to call:**
 
@@ -562,7 +562,8 @@ dvd.takeDVDTransfer(bytes32 _transferID)
   - Bonds move from B&D safe to investor
   - Cash moves from investor to B&D safe
   - If either leg fails (not enough balance, not whitelisted, compliance fails), **nothing moves**
-- **Caller:** The investor (counterpart) OR a TREX agent
+- **Caller:** B&D Agent (TREX agent only — our change removed counterpart/investor access)
+- **Why agent-only?** In our SCO Bond platform, the investor never calls the DVD contract directly. The investor's consent happens at the application layer (UI). The backend (Java/Spring Boot + Web3j) executes `takeDVDTransfer` using the agent's wallet. The investor's only on-chain action is `cash.approve()` (Step 18).
 - **Pre-requisites:**
   - Investor must have enough cash balance
   - Investor must have approved DVD contract (Step 18)
@@ -617,7 +618,7 @@ PHASE C — Run Deal
   18.     cashToken.approve(dvd, amount)                       (investor approves) [repeat per investor]
   19.     token.approve(dvd, 5000)                             (B&D approves)
   20.     dvd.initiateDVDTransfer(token, amt, investor, cash, cashAmt)  [repeat per investor]
-  21.     dvd.takeDVDTransfer(transferID)                      (atomic swap)  [repeat per investor]
+  21.     dvd.takeDVDTransfer(transferID)                      (agent settles) [repeat per investor]
 ```
 
 ---
@@ -638,4 +639,4 @@ PHASE C — Run Deal
 | `approve` (cash) | Each investor | MockCashToken |
 | `approve` (bonds) | B&D Agent | Token proxy |
 | `initiateDVDTransfer` | B&D Agent | DVDTransferManager |
-| `takeDVDTransfer` | Each investor | DVDTransferManager |
+| `takeDVDTransfer` | B&D Agent (TREX agent only) | DVDTransferManager |
