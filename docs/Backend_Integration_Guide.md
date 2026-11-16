@@ -4,15 +4,25 @@ Complete reference for the Java/Spring Boot backend: every function the backend 
 
 ---
 
-## Role Summary
+## Single-Wallet Architecture
 
-| Role | Wallet | What It Does |
+In our project, **one wallet performs all administrative roles**. The ERC-3643 framework defines separate roles (Deployer, Owner, IR Agent, Token Agent), but we register the same wallet address for all of them. This means the backend signs every transaction (deploy, whitelist, mint, DVD settle, pause, freeze) from a single private key. Only investors have separate wallets.
+
+| Logical Role | Wallet | What It Does |
 |---|---|---|
-| **Deployer** | Platform deployer | Deploys platform infra (IA, Factory, Gateway, modules) |
-| **Platform Admin** | Owner of TREX suite | Owns Token, IR, CTR, TIR, MC — can pause, set compliance |
-| **Registrar** | IR Agent | Whitelists/removes investors on IdentityRegistry |
-| **B&D Agent** | Token Agent | Mints, burns, freezes, initiates & settles DVD transfers |
-| **Investor** | End user | Holds bonds, approves ERC-20 allowance — never calls DVD directly |
+| **Deployer** | **Single admin wallet** | Deploys platform infra (IA, Factory, Gateway, modules) |
+| **Platform Admin (Owner)** | **Same wallet** | Owns Token, IR, CTR, TIR, MC — can pause, set compliance |
+| **Registrar (IR Agent)** | **Same wallet** | Whitelists/removes investors on IdentityRegistry |
+| **B&D Agent (Token Agent)** | **Same wallet** | Mints, burns, freezes, initiates & settles DVD transfers |
+| **Investor** | Separate wallet per investor | Holds bonds, approves ERC-20 allowance — never calls DVD directly |
+
+**Why this works:** The smart contracts check roles via `onlyOwner` and `onlyAgent` modifiers. As long as the single wallet is registered as both owner and agent on each contract, it passes all checks. The role separation in the table above is logical — it describes *what* the wallet does, not *who* owns the key.
+
+**What this means for the backend:**
+- Store one private key (securely) in the backend service
+- All admin transactions are signed by this one key
+- No multi-sig or key rotation needed for PoV
+- Investor wallets are the only other signers (they approve ERC-20 allowance from the UI)
 
 ---
 
@@ -22,7 +32,7 @@ Complete reference for the Java/Spring Boot backend: every function the backend 
 
 | Action | Function | Called By | Parameters |
 |---|---|---|---|
-| Register version | `addAndUseTREXVersion(Version, Implementations)` | Deployer (owner) | `Version{major,minor,patch}`, `Implementations{tokenImpl,ctrImpl,irImpl,irsImpl,tirImpl,mcImpl}` |
+| Register version | `addAndUseTREXVersion(Version, Implementations)` | Admin wallet | `Version{major,minor,patch}`, `Implementations{tokenImpl,ctrImpl,irImpl,irsImpl,tirImpl,mcImpl}` |
 
 **Events to store:** None critical — deployment is a one-time operation.
 
@@ -30,10 +40,10 @@ Complete reference for the Java/Spring Boot backend: every function the backend 
 
 | Action | Function | Called By | Parameters |
 |---|---|---|---|
-| Deploy TREX suite | `deployTREXSuite(TokenDetails, ClaimDetails)` | Deployer (approved) | See structs below |
-| Add deployer | `addDeployer(address)` | Owner | Deployer wallet address |
-| Remove deployer | `removeDeployer(address)` | Owner | Deployer wallet address |
-| Toggle public deploy | `setPublicDeploymentStatus(bool)` | Owner | `true`/`false` |
+| Deploy TREX suite | `deployTREXSuite(TokenDetails, ClaimDetails)` | Admin wallet | See structs below |
+| Add deployer | `addDeployer(address)` | Admin wallet | Deployer wallet address |
+| Remove deployer | `removeDeployer(address)` | Admin wallet | Deployer wallet address |
+| Toggle public deploy | `setPublicDeploymentStatus(bool)` | Admin wallet | `true`/`false` |
 | Check deployer | `isDeployer(address)` | Anyone (view) | Address to check |
 
 **TokenDetails struct:**
@@ -78,11 +88,11 @@ Complete reference for the Java/Spring Boot backend: every function the backend 
 
 | Action | Function | Called By | Parameters |
 |---|---|---|---|
-| Whitelist investor | `registerIdentity(address, IIdentity, uint16)` | Registrar (IR Agent) | `_userAddress`, `_identity` (ZeroAddress trick), `_country` (ISO 3166-1 numeric) |
-| Batch whitelist | `batchRegisterIdentity(address[], IIdentity[], uint16[])` | Registrar (IR Agent) | Arrays of addresses, identities, countries |
-| Remove investor | `deleteIdentity(address)` | Registrar (IR Agent) | Investor wallet address |
-| Update country | `updateCountry(address, uint16)` | Registrar (IR Agent) | Investor wallet, new country code |
-| Update identity | `updateIdentity(address, IIdentity)` | Registrar (IR Agent) | Investor wallet, new identity address |
+| Whitelist investor | `registerIdentity(address, IIdentity, uint16)` | Admin wallet (IR agent) | `_userAddress`, `_identity` (ZeroAddress trick), `_country` (ISO 3166-1 numeric) |
+| Batch whitelist | `batchRegisterIdentity(address[], IIdentity[], uint16[])` | Admin wallet (IR agent) | Arrays of addresses, identities, countries |
+| Remove investor | `deleteIdentity(address)` | Admin wallet (IR agent) | Investor wallet address |
+| Update country | `updateCountry(address, uint16)` | Admin wallet (IR agent) | Investor wallet, new country code |
+| Update identity | `updateIdentity(address, IIdentity)` | Admin wallet (IR agent) | Investor wallet, new identity address |
 | Check whitelisted | `contains(address)` | Anyone (view) | Wallet address |
 | Check verified | `isVerified(address)` | Anyone (view) | Wallet address |
 | Get identity | `identity(address)` | Anyone (view) | Wallet address |
@@ -124,35 +134,35 @@ Backend does NOT call IRS directly — IR delegates to it. But listen to these e
 
 ### 3.1 Token (ERC-3643 Security Token)
 
-**Agent-only functions (B&D Agent calls):**
+**Agent functions (Admin wallet as token agent):**
 
 | Action | Function | Called By | Parameters |
 |---|---|---|---|
-| Unpause token | `unpause()` | Token Agent | — |
-| Pause token | `pause()` | Token Agent | — |
-| Mint bonds | `mint(address, uint256)` | Token Agent | `_to` (investor), `_amount` |
-| Batch mint | `batchMint(address[], uint256[])` | Token Agent | Arrays |
-| Burn bonds | `burn(address, uint256)` | Token Agent | `_userAddress`, `_amount` |
-| Batch burn | `batchBurn(address[], uint256[])` | Token Agent | Arrays |
-| Force transfer | `forcedTransfer(address, address, uint256)` | Token Agent | `_from`, `_to`, `_amount` |
-| Batch force transfer | `batchForcedTransfer(address[], address[], uint256[])` | Token Agent | Arrays |
-| Freeze wallet | `setAddressFrozen(address, bool)` | Token Agent | `_userAddress`, `_freeze` |
-| Batch freeze | `batchSetAddressFrozen(address[], bool[])` | Token Agent | Arrays |
-| Freeze tokens (partial) | `freezePartialTokens(address, uint256)` | Token Agent | `_userAddress`, `_amount` |
-| Unfreeze tokens (partial) | `unfreezePartialTokens(address, uint256)` | Token Agent | `_userAddress`, `_amount` |
-| Batch freeze partial | `batchFreezePartialTokens(address[], uint256[])` | Token Agent | Arrays |
-| Batch unfreeze partial | `batchUnfreezePartialTokens(address[], uint256[])` | Token Agent | Arrays |
-| Recover lost wallet | `recoveryAddress(address, address, address)` | Token Agent | `_lostWallet`, `_newWallet`, `_investorOnchainID` |
+| Unpause token | `unpause()` | Admin wallet (token agent) | — |
+| Pause token | `pause()` | Admin wallet (token agent) | — |
+| Mint bonds | `mint(address, uint256)` | Admin wallet (token agent) | `_to` (investor), `_amount` |
+| Batch mint | `batchMint(address[], uint256[])` | Admin wallet (token agent) | Arrays |
+| Burn bonds | `burn(address, uint256)` | Admin wallet (token agent) | `_userAddress`, `_amount` |
+| Batch burn | `batchBurn(address[], uint256[])` | Admin wallet (token agent) | Arrays |
+| Force transfer | `forcedTransfer(address, address, uint256)` | Admin wallet (token agent) | `_from`, `_to`, `_amount` |
+| Batch force transfer | `batchForcedTransfer(address[], address[], uint256[])` | Admin wallet (token agent) | Arrays |
+| Freeze wallet | `setAddressFrozen(address, bool)` | Admin wallet (token agent) | `_userAddress`, `_freeze` |
+| Batch freeze | `batchSetAddressFrozen(address[], bool[])` | Admin wallet (token agent) | Arrays |
+| Freeze tokens (partial) | `freezePartialTokens(address, uint256)` | Admin wallet (token agent) | `_userAddress`, `_amount` |
+| Unfreeze tokens (partial) | `unfreezePartialTokens(address, uint256)` | Admin wallet (token agent) | `_userAddress`, `_amount` |
+| Batch freeze partial | `batchFreezePartialTokens(address[], uint256[])` | Admin wallet (token agent) | Arrays |
+| Batch unfreeze partial | `batchUnfreezePartialTokens(address[], uint256[])` | Admin wallet (token agent) | Arrays |
+| Recover lost wallet | `recoveryAddress(address, address, address)` | Admin wallet (token agent) | `_lostWallet`, `_newWallet`, `_investorOnchainID` |
 
-**Owner-only functions (Platform Admin calls):**
+**Owner functions (Admin wallet as owner):**
 
 | Action | Function | Called By | Parameters |
 |---|---|---|---|
-| Set token name | `setName(string)` | Owner | New name |
-| Set token symbol | `setSymbol(string)` | Owner | New symbol |
-| Set onchainID | `setOnchainID(address)` | Owner | Identity address |
-| Set IR | `setIdentityRegistry(address)` | Owner | IR contract address |
-| Set compliance | `setCompliance(address)` | Owner | MC contract address |
+| Set token name | `setName(string)` | Admin wallet (owner) | New name |
+| Set token symbol | `setSymbol(string)` | Admin wallet (owner) | New symbol |
+| Set onchainID | `setOnchainID(address)` | Admin wallet (owner) | Identity address |
+| Set IR | `setIdentityRegistry(address)` | Admin wallet (owner) | IR contract address |
+| Set compliance | `setCompliance(address)` | Admin wallet (owner) | MC contract address |
 
 **Investor-callable functions:**
 
@@ -203,7 +213,7 @@ Before DVD settlement, both parties must approve the DVDTransferManager contract
 
 | Who | Function on Which Token | Purpose |
 |---|---|---|
-| B&D Agent | `bondToken.approve(dvdManager, bondAmount)` | Allow DVD to pull bonds |
+| Admin wallet | `bondToken.approve(dvdManager, bondAmount)` | Allow DVD to pull bonds |
 | Investor | `cashToken.approve(dvdManager, cashAmount)` | Allow DVD to pull cash |
 
 ### 4.2 DVDTransferManager
@@ -212,20 +222,20 @@ Before DVD settlement, both parties must approve the DVDTransferManager contract
 
 | Action | Function | Called By | Parameters |
 |---|---|---|---|
-| Initiate swap | `initiateDVDTransfer(address, uint256, address, address, uint256)` | TREX Agent | `_token1` (what caller gives), `_token1Amount`, `_counterpart` (receiver of token1), `_token2` (what counterpart gives), `_token2Amount` |
-| Execute swap | `takeDVDTransfer(bytes32)` | TREX Agent | `_transferID` |
+| Initiate swap | `initiateDVDTransfer(address, uint256, address, address, uint256)` | Admin wallet (TREX agent) | `_token1` (what caller gives), `_token1Amount`, `_counterpart` (receiver of token1), `_token2` (what counterpart gives), `_token2Amount` |
+| Execute swap | `takeDVDTransfer(bytes32)` | Admin wallet (TREX agent) | `_transferID` |
 
 **Cancelable by multiple roles:**
 
 | Action | Function | Called By | Parameters |
 |---|---|---|---|
-| Cancel swap | `cancelDVDTransfer(bytes32)` | Maker, Taker, DVD Owner, or TREX Agent | `_transferID` |
+| Cancel swap | `cancelDVDTransfer(bytes32)` | Admin wallet (maker, owner, or TREX agent) | `_transferID` |
 
 **Owner/TREX-owner functions:**
 
 | Action | Function | Called By | Parameters |
 |---|---|---|---|
-| Set fees | `modifyFee(address, address, uint, uint, uint, address, address)` | DVD Owner or TREX token owner | `_token1`, `_token2`, `_fee1`, `_fee2`, `_feeBase`, `_fee1Wallet`, `_fee2Wallet` |
+| Set fees | `modifyFee(address, address, uint, uint, uint, address, address)` | Admin wallet (DVD owner) | `_token1`, `_token2`, `_fee1`, `_fee2`, `_feeBase`, `_fee1Wallet`, `_fee2Wallet` |
 
 **View functions:**
 
@@ -252,7 +262,7 @@ Before DVD settlement, both parties must approve the DVDTransferManager contract
 
 | Action | Function | Called By | Parameters |
 |---|---|---|---|
-| Mint cash | `mint(address, uint256)` | Owner (deployer) | `_to`, `_amount` |
+| Mint cash | `mint(address, uint256)` | Admin wallet (owner) | `_to`, `_amount` |
 | Transfer cash | `transfer(address, uint256)` | Token holder | `_to`, `_amount` |
 | Approve DVD | `approve(address, uint256)` | Token holder | `_spender`, `_amount` |
 
@@ -266,11 +276,11 @@ Before DVD settlement, both parties must approve the DVDTransferManager contract
 
 | Action | Function | Called By | Parameters |
 |---|---|---|---|
-| Add module | `addModule(address)` | Owner | Module address |
-| Remove module | `removeModule(address)` | Owner | Module address |
-| Call module function | `callModuleFunction(bytes, address)` | Owner | Encoded calldata, module address |
-| Bind token | `bindToken(address)` | Owner | Token address |
-| Unbind token | `unbindToken(address)` | Owner | Token address |
+| Add module | `addModule(address)` | Admin wallet (owner) | Module address |
+| Remove module | `removeModule(address)` | Admin wallet (owner) | Module address |
+| Call module function | `callModuleFunction(bytes, address)` | Admin wallet (owner) | Encoded calldata, module address |
+| Bind token | `bindToken(address)` | Admin wallet (owner) | Token address |
+| Unbind token | `unbindToken(address)` | Admin wallet (owner) | Token address |
 
 **Auto-called by Token (not by backend):**
 
@@ -303,7 +313,7 @@ Before DVD settlement, both parties must approve the DVDTransferManager contract
 
 | Action | Function | Called By | Parameters |
 |---|---|---|---|
-| Set supply limit | `setSupplyLimit(uint256)` | Via `MC.callModuleFunction()` | `_limit` (max tokens) |
+| Set supply limit | `setSupplyLimit(uint256)` | Admin wallet via `MC.callModuleFunction()` | `_limit` (max tokens) |
 
 **View functions:**
 
@@ -325,8 +335,8 @@ Before DVD settlement, both parties must approve the DVDTransferManager contract
 
 | Action | Function | Called By | Parameters |
 |---|---|---|---|
-| Add agent | `addAgent(address)` | Owner | Agent wallet address |
-| Remove agent | `removeAgent(address)` | Owner | Agent wallet address |
+| Add agent | `addAgent(address)` | Admin wallet (owner) | Agent wallet address |
+| Remove agent | `removeAgent(address)` | Admin wallet (owner) | Agent wallet address |
 | Check agent | `isAgent(address)` | Anyone (view) | Address to check |
 
 **Events to listen:**
@@ -346,8 +356,8 @@ Note: These events fire on both Token and IR contracts. Track the `contract_addr
 
 | Action | Function | Called By | Parameters |
 |---|---|---|---|
-| Add claim topic | `addClaimTopic(uint256)` | Owner | Topic ID (e.g., KYC=1, AML=2) |
-| Remove claim topic | `removeClaimTopic(uint256)` | Owner | Topic ID |
+| Add claim topic | `addClaimTopic(uint256)` | Admin wallet (owner) | Topic ID (e.g., KYC=1, AML=2) |
+| Remove claim topic | `removeClaimTopic(uint256)` | Admin wallet (owner) | Topic ID |
 | Get topics | `getClaimTopics()` | Anyone (view) | — |
 
 **Events:** `ClaimTopicAdded(uint256 indexed claimTopic)`, `ClaimTopicRemoved(uint256 indexed claimTopic)`
@@ -356,9 +366,9 @@ Note: These events fire on both Token and IR contracts. Track the `contract_addr
 
 | Action | Function | Called By | Parameters |
 |---|---|---|---|
-| Add issuer | `addTrustedIssuer(IClaimIssuer, uint256[])` | Owner | Issuer address, allowed claim topics |
-| Remove issuer | `removeTrustedIssuer(IClaimIssuer)` | Owner | Issuer address |
-| Update topics | `updateIssuerClaimTopics(IClaimIssuer, uint256[])` | Owner | Issuer address, new topics |
+| Add issuer | `addTrustedIssuer(IClaimIssuer, uint256[])` | Admin wallet (owner) | Issuer address, allowed claim topics |
+| Remove issuer | `removeTrustedIssuer(IClaimIssuer)` | Admin wallet (owner) | Issuer address |
+| Update topics | `updateIssuerClaimTopics(IClaimIssuer, uint256[])` | Admin wallet (owner) | Issuer address, new topics |
 
 **View functions:** `getTrustedIssuers()`, `isTrustedIssuer(address)`, `getTrustedIssuerClaimTopics(IClaimIssuer)`, `getTrustedIssuersForClaimTopic(uint256)`, `hasClaimTopic(address, uint256)`
 
@@ -412,40 +422,50 @@ Priority events the backend MUST listen to, ordered by importance:
 
 ## End-to-End Transaction Flow (Backend Perspective)
 
+All steps marked **"Backend calls"** are signed by the **single admin wallet**. Only step 5 is signed by the investor's wallet (from the UI).
+
 ```
 1. DEPLOY PLATFORM
    Backend calls: gateway.deployTREXSuite(tokenDetails, claimDetails)
+   Signed by:     Admin wallet (deployer + owner)
    Listen for:    TREXSuiteDeployed → save all 6 contract addresses to DB
 
 2. WHITELIST INVESTORS
    Backend calls: ir.registerIdentity(investorWallet, zeroAddress, countryCode)
+   Signed by:     Admin wallet (registered as IR agent)
    Listen for:    IdentityRegistered → update whitelist table
 
 3. UNPAUSE TOKEN
    Backend calls: token.unpause()
+   Signed by:     Admin wallet (registered as token agent)
    Listen for:    Unpaused → update token state
 
-4. MINT BONDS TO AGENT
-   Backend calls: token.mint(bndAgentWallet, 5000)
-   Listen for:    Transfer(0x0 → bndAgent, 5000) → record issuance
+4. MINT BONDS TO ADMIN WALLET
+   Backend calls: token.mint(adminWallet, 5000)
+   Signed by:     Admin wallet (token agent mints to itself)
+   Listen for:    Transfer(0x0 → adminWallet, 5000) → record issuance
 
 5. INVESTOR APPROVES CASH
-   UI triggers:   cashToken.approve(dvdManager, cashAmount)   [investor wallet]
+   UI triggers:   cashToken.approve(dvdManager, cashAmount)
+   Signed by:     Investor wallet (only investor-signed tx in the flow)
    Listen for:    Approval(investor, dvdManager, cashAmount)
 
-6. AGENT APPROVES BONDS
+6. ADMIN APPROVES BONDS
    Backend calls: bondToken.approve(dvdManager, bondAmount)
-   Listen for:    Approval(bndAgent, dvdManager, bondAmount)
+   Signed by:     Admin wallet (approves DVD to pull bonds)
+   Listen for:    Approval(adminWallet, dvdManager, bondAmount)
 
-7. AGENT INITIATES DVD
+7. ADMIN INITIATES DVD
    Backend calls: dvdManager.initiateDVDTransfer(bondToken, bondAmt, investor, cashToken, cashAmt)
+   Signed by:     Admin wallet (registered as TREX agent)
    Listen for:    DVDTransferInitiated → save transfer with PENDING status
 
-8. AGENT SETTLES DVD
+8. ADMIN SETTLES DVD
    Backend calls: dvdManager.takeDVDTransfer(transferID)
+   Signed by:     Admin wallet (registered as TREX agent)
    Listen for:    DVDTransferExecuted → update transfer to SETTLED
-                  Transfer(bndAgent → investor, bondAmt) → bond moved
-                  Transfer(investor → bndAgent, cashAmt) → cash moved
+                  Transfer(adminWallet → investor, bondAmt) → bond moved
+                  Transfer(investor → adminWallet, cashAmt) → cash moved
 ```
 
 ---
