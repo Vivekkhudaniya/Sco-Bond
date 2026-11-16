@@ -5,6 +5,35 @@ ordered by dependency chain: each phase builds on the previous one.
 
 ---
 
+## Contract Inventory
+
+**Total contracts in repo:** 40 (excluding interfaces, legacy, and test helpers)
+**Contracts we use in SCO Bond:** 11
+
+| # | Contract | Category | Tests |
+|---|----------|----------|-------|
+| 1 | TREXFactory | Factory | Done (Phase 1) |
+| 2 | TREXGateway | Factory | Done (Phase 1) |
+| 3 | IdentityRegistry | Registry | Done (Phase 2) |
+| 4 | IdentityRegistryStorage | Registry | Done (Phase 2, tested through IR) |
+| 5 | Token | Token | Not started |
+| 6 | ModularCompliance | Compliance | Not started |
+| 7 | SupplyLimitModule | Compliance Module | Not started |
+| 8 | DVDTransferManager | Settlement (modified) | Not started |
+| 9 | MockCashToken | Test Token | Not started |
+| 10 | ClaimTopicsRegistry | Registry | Not started |
+| 11 | TrustedIssuersRegistry | Registry | Not started |
+
+**Progress: 4 of 11 contracts tested (Phase 1 + Phase 2)**
+
+**Contracts not used** (in repo but not part of our flow):
+DVATransferManager, CountryAllowModule, CountryRestrictModule, MaxBalanceModule,
+ConditionalTransferModule, ExchangeMonthlyLimitsModule, TimeExchangeLimitsModule,
+TimeTransfersLimitsModule, TokenListingRestrictionsModule, TransferFeesModule,
+TransferRestrictModule, IAFactory, all legacy compliance, permissioning managers.
+
+---
+
 ## Testing Strategy
 
 **Approach:** Bottom-up, mirroring the 12-step deployment flow from
@@ -20,8 +49,8 @@ starts from a working platform. Individual tests then deploy deals on top.
 ```
 test/
 ├── BaseTest.sol              ← shared setUp (Steps 1-4)
-├── Phase1_Factory.t.sol      ← TREXFactory + Gateway (Steps 3-7)
-├── Phase2_Whitelist.t.sol    ← IdentityRegistry + whitelist trick (Step 8)
+├── Phase1_Factory.t.sol      ← TREXFactory + Gateway (Steps 3-7)        ✅ DONE
+├── Phase2_Whitelist.t.sol    ← IdentityRegistry + whitelist trick (Step 8) ✅ DONE
 ├── Phase3_Token.t.sol        ← Mint, pause, freeze, compliance (Step 9)
 ├── Phase4_Compliance.t.sol   ← SupplyLimitModule edge cases (Step 5+9)
 ├── Phase5_DVD.t.sol          ← DVDTransferManager full flow (Steps 10-12)
@@ -55,9 +84,10 @@ test/
 
 ---
 
-## Phase 1: Factory & Gateway
+## Phase 1: Factory & Gateway — DONE
 
 **File:** `test/Phase1_Factory.t.sol`
+**Status:** Complete
 **Covers:** Steps 3, 4, 7 — the deal deployment machinery.
 
 ### 1.1 TREXFactory — deployTREXSuite
@@ -94,9 +124,10 @@ test/
 
 ---
 
-## Phase 2: Whitelist (IdentityRegistry)
+## Phase 2: Whitelist (IdentityRegistry) — DONE
 
 **File:** `test/Phase2_Whitelist.t.sol`
+**Status:** Complete (by teammate)
 **Covers:** Step 8 — the whitelist trick (empty claim topics = `isVerified` short-circuits).
 
 ### 2.1 Registration
@@ -211,6 +242,8 @@ test/
 
 **File:** `test/Phase5_DVD.t.sol`
 **Covers:** Steps 10-12 — funding, initiating, and settling DVD transfers.
+**Note:** DVDTransferManager has been modified — both `initiateDVDTransfer` and
+`takeDVDTransfer` are now restricted to TREX agents only (see `DVDTransferManager_Agent_Only_Changes.md`).
 
 ### 5.1 Initiate
 
@@ -222,37 +255,40 @@ test/
 | 4 | `test_initiate_zeroCounterpart_reverts` | Counterpart = `address(0)` reverts |
 | 5 | `test_initiate_insufficientBalance_reverts` | B&D has fewer bonds than offered — reverts |
 | 6 | `test_initiate_noAllowance_reverts` | B&D hasn't approved DVD — reverts |
+| 7 | `test_initiate_onlyAgentCanInitiate` | Non-agent (investor) calling `initiateDVDTransfer` reverts with "only TREX agents can initiate transfers" |
+| 8 | `test_initiate_agentOnEitherTokenCanInitiate` | Agent on token1 OR token2 side can initiate |
 
 ### 5.2 Calculate transfer ID
 
 | # | Test | What it verifies |
 |---|------|-----------------|
-| 7 | `test_calculateTransferID_deterministic` | Same inputs always produce the same ID |
-| 8 | `test_calculateTransferID_uniquePerNonce` | Different nonce → different ID |
-| 9 | `test_calculateTransferID_matchesStoredID` | Calculated ID matches what `initiateDVDTransfer` stored |
+| 9 | `test_calculateTransferID_deterministic` | Same inputs always produce the same ID |
+| 10 | `test_calculateTransferID_uniquePerNonce` | Different nonce → different ID |
+| 11 | `test_calculateTransferID_matchesStoredID` | Calculated ID matches what `initiateDVDTransfer` stored |
 
 ### 5.3 Take (settle)
 
 | # | Test | What it verifies |
 |---|------|-----------------|
-| 10 | `test_take_bondsMoveToBuyer` | After settlement, Aurora has 2000 bonds |
-| 11 | `test_take_cashMovesToSeller` | After settlement, B&D has the EURd |
-| 12 | `test_take_deletesTransfer` | Transfer is removed from storage after settlement |
-| 13 | `test_take_emitsEvent` | `DVDTransferExecuted` event emitted |
-| 14 | `test_take_onlyCounterpartOrAgent` | Random caller cannot settle |
-| 15 | `test_take_investorNotWhitelisted_reverts` | If investor was removed from whitelist before settlement, entire swap reverts |
-| 16 | `test_take_tokenPaused_reverts` | If token is re-paused, bond leg fails → entire swap reverts |
-| 17 | `test_take_insufficientCash_reverts` | If investor spent their cash elsewhere, swap reverts |
-| 18 | `test_take_sameTwice_reverts` | Settling the same transferID again reverts (already deleted) |
+| 12 | `test_take_bondsMoveToBuyer` | After settlement, Aurora has 2000 bonds |
+| 13 | `test_take_cashMovesToSeller` | After settlement, B&D has the EURd |
+| 14 | `test_take_deletesTransfer` | Transfer is removed from storage after settlement |
+| 15 | `test_take_emitsEvent` | `DVDTransferExecuted` event emitted |
+| 16 | `test_take_onlyAgentCanSettle` | Random caller cannot settle — reverts with "only TREX agents can execute transfers" |
+| 17 | `test_take_investorCannotSettle` | Counterpart (investor) calling `takeDVDTransfer` reverts — agent-only after our modification |
+| 18 | `test_take_investorNotWhitelisted_reverts` | If investor was removed from whitelist before settlement, entire swap reverts |
+| 19 | `test_take_tokenPaused_reverts` | If token is re-paused, bond leg fails → entire swap reverts |
+| 20 | `test_take_insufficientCash_reverts` | If investor spent their cash elsewhere, swap reverts |
+| 21 | `test_take_sameTwice_reverts` | Settling the same transferID again reverts (already deleted) |
 
 ### 5.4 Cancel
 
 | # | Test | What it verifies |
 |---|------|-----------------|
-| 19 | `test_cancel_byMaker` | B&D can cancel their own pending offer |
-| 20 | `test_cancel_byCounterpart` | Investor can cancel an offer made to them |
-| 21 | `test_cancel_deletesTransfer` | Transfer removed from storage after cancel |
-| 22 | `test_cancel_randomCaller_reverts` | Unrelated address cannot cancel |
+| 22 | `test_cancel_byMaker` | B&D can cancel their own pending offer |
+| 23 | `test_cancel_byCounterpart` | Investor can cancel an offer made to them |
+| 24 | `test_cancel_deletesTransfer` | Transfer removed from storage after cancel |
+| 25 | `test_cancel_randomCaller_reverts` | Unrelated address cannot cancel |
 
 ---
 
@@ -294,19 +330,19 @@ test/
 ```
 Phase 0 (BaseTest)          ← shared, no tests of its own
     │
-    ├── Phase 1 (Factory)   ← validates the deployment machinery works
+    ├── Phase 1 (Factory)   ← validates the deployment machinery works          ✅ DONE
     │
-    ├── Phase 2 (Whitelist) ← validates identity registry + isVerified trick
+    ├── Phase 2 (Whitelist) ← validates identity registry + isVerified trick    ✅ DONE
     │
-    ├── Phase 3 (Token)     ← validates mint/transfer/burn/freeze guards
+    ├── Phase 3 (Token)     ← validates mint/transfer/burn/freeze guards        ⬜ TODO
     │
-    ├── Phase 4 (Compliance)← validates supply cap module
+    ├── Phase 4 (Compliance)← validates supply cap module                       ⬜ TODO
     │
-    ├── Phase 5 (DVD)       ← validates atomic swap (depends on Phases 2-4)
+    ├── Phase 5 (DVD)       ← validates atomic swap (depends on Phases 2-4)    ⬜ TODO
     │
-    ├── Phase 6 (E2E)       ← golden path through all 12 steps
+    ├── Phase 6 (E2E)       ← golden path through all 12 steps                ⬜ TODO
     │
-    └── Phase 7 (Edge)      ← adversarial cross-cutting scenarios
+    └── Phase 7 (Edge)      ← adversarial cross-cutting scenarios              ⬜ TODO
 ```
 
 Run all: `forge test -vvv`
@@ -317,16 +353,16 @@ Run one test: `forge test --match-test test_mint_toWhitelistedAddress -vvv`
 
 ## Test Count Summary
 
-| Phase | File | Tests |
-|-------|------|-------|
-| 1 | Phase1_Factory.t.sol | 17 |
-| 2 | Phase2_Whitelist.t.sol | 11 |
-| 3 | Phase3_Token.t.sol | 25 |
-| 4 | Phase4_Compliance.t.sol | 8 |
-| 5 | Phase5_DVD.t.sol | 22 |
-| 6 | Phase6_EndToEnd.t.sol | 3 |
-| 7 | Phase7_EdgeCases.t.sol | 10 |
-| **Total** | | **96** |
+| Phase | File | Tests | Status |
+|-------|------|-------|--------|
+| 1 | Phase1_Factory.t.sol | 17 | Done |
+| 2 | Phase2_Whitelist.t.sol | 11 | Done |
+| 3 | Phase3_Token.t.sol | 25 | TODO |
+| 4 | Phase4_Compliance.t.sol | 8 | TODO |
+| 5 | Phase5_DVD.t.sol | 25 | TODO |
+| 6 | Phase6_EndToEnd.t.sol | 3 | TODO |
+| 7 | Phase7_EdgeCases.t.sol | 10 | TODO |
+| **Total** | | **99** | **28 done / 71 remaining** |
 
 ---
 
@@ -347,5 +383,11 @@ Run one test: `forge test --match-test test_mint_toWhitelistedAddress -vvv`
   path: at maturity, B&D (token agent) burns bonds from each investor without needing
   them to be whitelisted, unfrozen, or the token unpaused.
 
-- **DVD atomicity** — Phase 5 tests 15-18 verify that if either leg would fail, the
+- **DVD agent-only access** — We modified `DVDTransferManager` so that both
+  `initiateDVDTransfer` and `takeDVDTransfer` can only be called by TREX agents.
+  Investors never interact with the DVD contract directly — they only need
+  `cash.approve()`. Phase 5 tests 7-8 and 16-17 verify this restriction.
+  See `docs/DVDTransferManager_Agent_Only_Changes.md` for full details.
+
+- **DVD atomicity** — Phase 5 tests 18-21 verify that if either leg would fail, the
   entire transaction reverts and nothing moves.
