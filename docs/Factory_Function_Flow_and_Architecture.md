@@ -109,11 +109,11 @@ and how contracts interact with each other — from deployment to settlement.
 │   │  Safe     │     cashAmount)                    │  (creates offer) │         │
 │   └───────────┘                                    └──────────────────┘         │
 │                                                                                 │
-│   Step 12: Investor accepts — ATOMIC SWAP                                       │
+│   Step 12: B&D Agent settles — ATOMIC SWAP                                      │
 │   ┌───────────┐    takeDVDTransfer(transferID)     ┌──────────────────┐         │
-│   │ Investor  │──────────────────────────────────▶│DVDTransferManager│         │
-│   └───────────┘                                    │                  │         │
-│                                                    │  ┌────────────┐ │         │
+│   │  B&D      │──────────────────────────────────▶│DVDTransferManager│         │
+│   │  Safe     │  (agent-only — our change)        │                  │         │
+│   └───────────┘                                    │  ┌────────────┐ │         │
 │                    bonds: B&D → Investor ◀─────────│──│ Bond leg   │ │         │
 │                    cash: Investor → B&D  ◀─────────│──│ Cash leg   │ │         │
 │                                                    │  └────────────┘ │         │
@@ -445,12 +445,16 @@ FUNCTION:     token.approve(dvd, 5000)
 
 ---
 
-### STEP 11: B&D offers each trade — `dvd.initiateDVDTransfer(...)`
+### STEP 11: B&D Agent offers each trade — `dvd.initiateDVDTransfer(...)`
 
 ```
-WHO CALLS:    B&D Safe
+WHO CALLS:    B&D Safe (must be a TREX agent — our change)
 FUNCTION:     dvd.initiateDVDTransfer(token1, token1Amount, counterpart, token2, token2Amount)
 ```
+
+**Our change:** The original contract had no access control — anyone could initiate.
+We added `require(isTREXAgent(token1, msg.sender) || isTREXAgent(token2, msg.sender))`.
+B&D Safe is registered as a token agent during `deployTREXSuite` (Step 7), so it passes.
 
 **Example — Trade 1 (Aurora gets 2,000 bonds for 199,800,000 EURd):**
 
@@ -463,27 +467,33 @@ FUNCTION:     dvd.initiateDVDTransfer(token1, token1Amount, counterpart, token2,
 | `_token2Amount` | `199800000000000` | 199,800 EURd (6 decimals) |
 
 **What happens inside:**
-1. Checks B&D has ≥ 2000 bonds → yes
-2. Checks DVD has allowance for B&D's bonds → yes (Step 10)
-3. Checks counterpart is not zero address → yes
-4. Checks token2 is valid ERC20 → yes
-5. Creates a `transferID` = hash of (nonce, B&D, token, 2000, Aurora, cash, cashAmount)
-6. Stores both legs:
+1. **Checks msg.sender is a TREX agent** → B&D is agent on bond token ✓ (our change)
+2. Checks B&D has ≥ 2000 bonds → yes
+3. Checks DVD has allowance for B&D's bonds → yes (Step 10)
+4. Checks counterpart is not zero address → yes
+5. Checks token2 is valid ERC20 → yes
+6. Creates a `transferID` = hash of (nonce, B&D, token, 2000, Aurora, cash, cashAmount)
+7. Stores both legs:
    - `token1ToDeliver[transferID]` = {B&D, bondToken, 2000}
    - `token2ToDeliver[transferID]` = {Aurora, cashToken, 199800000000000}
-7. Emits `DVDTransferInitiated` event with the `transferID`
-8. Increments `txNonce`
+8. Emits `DVDTransferInitiated` event with the `transferID`
+9. Increments `txNonce`
 
 **Repeat for each trade** (3 trades total for Deal 51X5RT).
 
 ---
 
-### STEP 12: Investor accepts — `dvd.takeDVDTransfer(...)`
+### STEP 12: B&D Agent settles — `dvd.takeDVDTransfer(...)`
 
 ```
-WHO CALLS:    Investor (e.g. Aurora) OR a token agent (B&D Safe)
+WHO CALLS:    B&D Safe (must be a TREX agent — our change)
 FUNCTION:     dvd.takeDVDTransfer(transferID)
 ```
+
+**Our change:** The original contract allowed three callers: the counterpart (investor),
+or a TREX agent on either token. We removed counterpart access. Now only TREX agents
+can settle. The investor never calls this function — their only on-chain action is
+`cash.approve()` (Step 10). The B&D Agent drives settlement end-to-end via the backend.
 
 | Parameter | Value | Meaning |
 |---|---|---|
@@ -494,8 +504,8 @@ FUNCTION:     dvd.takeDVDTransfer(transferID)
 ```
 1.  Load both legs from storage
 2.  Check: transferID exists?                → yes
-3.  Check: caller is the counterpart (Aurora)
-    OR a TREX agent?                         → yes
+3.  Check: caller is a TREX agent?           → yes (B&D is agent on bond token)
+    (our change — original also allowed counterpart)
 4.  Check: Aurora has enough cash?           → yes
 5.  Check: DVD has allowance for Aurora's cash? → yes
 
@@ -590,20 +600,25 @@ B&D Safe              Token                 SupplyLimitModule
 ```
 
 ```
-B&D Safe             DVDTransferManager            Token           MockCashToken
+B&D Safe (agent)     DVDTransferManager            Token           MockCashToken
     │                        │                       │                   │
     │  initiateDVDTransfer   │                       │                   │
     │  (token, 2000, Aurora, │                       │                   │
     │   cash, cashAmount)    │                       │                   │
-    │───────────────────────▶│  Store offer           │                   │
+    │───────────────────────▶│  Check: isTREXAgent?  │                   │
+    │                        │  → yes (our change)   │                   │
+    │                        │  Store offer           │                   │
     │                        │  Emit transferID       │                   │
     │◀───────────────────────│                       │                   │
 
-Aurora                DVDTransferManager            Token           MockCashToken
+B&D Safe (agent)     DVDTransferManager            Token           MockCashToken
     │                        │                       │                   │
     │  takeDVDTransfer       │                       │                   │
     │  (transferID)          │                       │                   │
     │───────────────────────▶│                       │                   │
+    │                        │  Check: isTREXAgent?  │                   │
+    │                        │  → yes (our change)   │                   │
+    │                        │                       │                   │
     │                        │  BOND LEG:            │                   │
     │                        │  transferFrom(B&D,    │                   │
     │                        │    Aurora, 2000)      │                   │
