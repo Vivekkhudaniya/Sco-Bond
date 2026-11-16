@@ -7,6 +7,10 @@ foundry.lock
 # Node
 node_modules/
 
+# Hardhat
+cache-hardhat/
+artifacts/
+
 # Environment
 .env
 
