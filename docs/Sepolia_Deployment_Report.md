@@ -129,8 +129,8 @@ Called `dvd.initiateDVDTransfer()` twice:
 
 Each call returns a unique `transferID` (bytes32 hash).
 
-**Step 21 — Investors Execute Atomic Swaps**
-Each investor called `dvd.takeDVDTransfer(transferID)`:
+**Step 21 — B&D Agent Settles Atomic Swaps**
+B&D Agent called `dvd.takeDVDTransfer(transferID)` for each investor (agent-only — our change):
 - Bonds moved from B&D agent → investor
 - EURd moved from investor → B&D agent
 - Both legs in one transaction — if either fails, nothing moves
