@@ -212,7 +212,7 @@ Each deal deploys proxy contracts instead of full contracts. Proxies are cheap t
 
 | File | Purpose |
 |---|---|
-| **DVDTransferManager.sol** | Delivery vs Delivery — the atomic swap engine. B&D calls `initiateDVDTransfer()` to offer bonds in exchange for cash. Investor calls `takeDVDTransfer()` and both legs (bonds → investor, cash → B&D) execute in one transaction. If either side fails, nothing moves. Also supports `cancelDVDTransfer()` and optional per-parity fees via `modifyFee()`. **Used by us for settlement.** |
+| **DVDTransferManager.sol** | Delivery vs Delivery — the atomic swap engine. B&D Agent calls `initiateDVDTransfer()` to offer bonds in exchange for cash. B&D Agent also calls `takeDVDTransfer()` to settle — both legs (bonds → investor, cash → B&D) execute in one transaction. If either side fails, nothing moves. **Our change:** both `initiateDVDTransfer` and `takeDVDTransfer` are restricted to TREX agents only — investors never call the DVD contract directly (they only `approve` cash). Also supports `cancelDVDTransfer()` and optional per-parity fees via `modifyFee()`. **Used by us for settlement.** |
 
 ---
 
