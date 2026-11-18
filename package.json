@@ -4,12 +4,11 @@
   "description": "To make it easy for you to get started with GitLab, here's a list of recommended next steps.",
   "main": "index.js",
   "directories": {
-    "doc": "docs",
-    "lib": "lib",
-    "test": "test"
+    "doc": "docs"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npx hardhat test",
+    "compile": "npx hardhat compile"
   },
   "repository": {
     "type": "git",
@@ -25,11 +24,11 @@
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-network-helpers": "^3.0.12",
-    "@nomicfoundation/hardhat-node-test-runner": "^3.1.2",
+    "@nomicfoundation/hardhat-node-test-runner": "^3.0.17",
     "@onchain-id/solidity": "^2.2.1",
     "@openzeppelin/contracts": "^4.9.6",
     "@openzeppelin/contracts-upgradeable": "^4.9.6",
     "chai": "^6.3.0",
-    "hardhat": "^3.22.0"
+    "hardhat": "^3.12.0"
   }
 }
