@@ -36,6 +36,24 @@ export async function getContractAt(artifactName, address, signer) {
 
 export const SUPPLY_LIMIT = 5000n;
 
+export function findEvent(receipt, contract, eventName) {
+  for (const log of receipt.logs) {
+    try {
+      const parsed = contract.interface.parseLog({ topics: log.topics, data: log.data });
+      if (parsed && parsed.name === eventName) return parsed;
+    } catch {}
+  }
+  return null;
+}
+
+export function randomAddress() {
+  return ethers.Wallet.createRandom().address;
+}
+
+export function randomCountry() {
+  return Math.floor(Math.random() * 999) + 1;
+}
+
 export async function deployPlatform(deployer) {
   // Step 1: deploy 6 implementations
   const tokenImpl = await deployContract(deployer, "Token");
