@@ -10,3 +10,5 @@ artifacts/
 
 # OS
 .DS_Store
+
+coverage/
