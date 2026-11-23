@@ -43,7 +43,7 @@ describe("Phase 4: ModularCompliance", () => {
   });
 
   after(async () => {
-    if (conn) await conn.close();
+    // conn lifecycle managed by Hardhat 3.22+
   });
 
   // ═══════════════════════════════════════════════════════════════════

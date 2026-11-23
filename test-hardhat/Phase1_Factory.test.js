@@ -40,7 +40,7 @@ describe("Phase 1: Factory & Gateway", () => {
   });
 
   after(async () => {
-    if (conn) await conn.close();
+    // conn lifecycle managed by Hardhat 3.22+
   });
 
   // ═══════════════════════════════════════════════════════════════════

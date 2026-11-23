@@ -47,7 +47,7 @@ describe("Phase 3: IdentityRegistryStorage", () => {
   });
 
   after(async () => {
-    if (conn) await conn.close();
+    // conn lifecycle managed by Hardhat 3.22+
   });
 
   // ═══════════════════════════════════════════════════════════════════
