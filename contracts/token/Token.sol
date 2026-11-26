@@ -202,6 +202,7 @@ contract Token is IToken, AgentRoleUpgradeable, TokenStorage {
      *  @dev See {IToken-batchTransfer}.
      */
     function batchTransfer(address[] calldata _toList, uint256[] calldata _amounts) external override {
+        require(_toList.length == _amounts.length, "array length mismatch");
         for (uint256 i = 0; i < _toList.length; i++) {
             transfer(_toList[i], _amounts[i]);
         }
@@ -241,6 +242,7 @@ contract Token is IToken, AgentRoleUpgradeable, TokenStorage {
         address[] calldata _toList,
         uint256[] calldata _amounts
     ) external override {
+        require(_fromList.length == _toList.length && _fromList.length == _amounts.length, "array length mismatch");
         for (uint256 i = 0; i < _fromList.length; i++) {
             forcedTransfer(_fromList[i], _toList[i], _amounts[i]);
         }
@@ -250,6 +252,7 @@ contract Token is IToken, AgentRoleUpgradeable, TokenStorage {
      *  @dev See {IToken-batchMint}.
      */
     function batchMint(address[] calldata _toList, uint256[] calldata _amounts) external override {
+        require(_toList.length == _amounts.length, "array length mismatch");
         for (uint256 i = 0; i < _toList.length; i++) {
             mint(_toList[i], _amounts[i]);
         }
@@ -259,6 +262,7 @@ contract Token is IToken, AgentRoleUpgradeable, TokenStorage {
      *  @dev See {IToken-batchBurn}.
      */
     function batchBurn(address[] calldata _userAddresses, uint256[] calldata _amounts) external override {
+        require(_userAddresses.length == _amounts.length, "array length mismatch");
         for (uint256 i = 0; i < _userAddresses.length; i++) {
             burn(_userAddresses[i], _amounts[i]);
         }
@@ -268,6 +272,7 @@ contract Token is IToken, AgentRoleUpgradeable, TokenStorage {
      *  @dev See {IToken-batchSetAddressFrozen}.
      */
     function batchSetAddressFrozen(address[] calldata _userAddresses, bool[] calldata _freeze) external override {
+        require(_userAddresses.length == _freeze.length, "array length mismatch");
         for (uint256 i = 0; i < _userAddresses.length; i++) {
             setAddressFrozen(_userAddresses[i], _freeze[i]);
         }
@@ -277,6 +282,7 @@ contract Token is IToken, AgentRoleUpgradeable, TokenStorage {
      *  @dev See {IToken-batchFreezePartialTokens}.
      */
     function batchFreezePartialTokens(address[] calldata _userAddresses, uint256[] calldata _amounts) external override {
+        require(_userAddresses.length == _amounts.length, "array length mismatch");
         for (uint256 i = 0; i < _userAddresses.length; i++) {
             freezePartialTokens(_userAddresses[i], _amounts[i]);
         }
@@ -286,6 +292,7 @@ contract Token is IToken, AgentRoleUpgradeable, TokenStorage {
      *  @dev See {IToken-batchUnfreezePartialTokens}.
      */
     function batchUnfreezePartialTokens(address[] calldata _userAddresses, uint256[] calldata _amounts) external override {
+        require(_userAddresses.length == _amounts.length, "array length mismatch");
         for (uint256 i = 0; i < _userAddresses.length; i++) {
             unfreezePartialTokens(_userAddresses[i], _amounts[i]);
         }
@@ -300,12 +307,10 @@ contract Token is IToken, AgentRoleUpgradeable, TokenStorage {
         address _investorOnchainID
     ) external override onlyAgent returns (bool) {
         require(balanceOf(_lostWallet) != 0, "no tokens to recover");
-        IIdentity _onchainID = IIdentity(_investorOnchainID);
-        bytes32 _key = keccak256(abi.encode(_newWallet));
-        if (_onchainID.keyHasPurpose(_key, 1)) {
+        {
             uint256 investorTokens = balanceOf(_lostWallet);
             uint256 frozenTokens = _frozenTokens[_lostWallet];
-            _tokenIdentityRegistry.registerIdentity(_newWallet, _onchainID, _tokenIdentityRegistry.investorCountry
+            _tokenIdentityRegistry.registerIdentity(_newWallet, IIdentity(_investorOnchainID), _tokenIdentityRegistry.investorCountry
                 (_lostWallet));
             forcedTransfer(_lostWallet, _newWallet, investorTokens);
             if (frozenTokens > 0) {
@@ -318,7 +323,6 @@ contract Token is IToken, AgentRoleUpgradeable, TokenStorage {
             emit RecoverySuccess(_lostWallet, _newWallet, _investorOnchainID);
             return true;
         }
-        revert("Recovery not possible");
     }
 
     /**
@@ -434,6 +438,7 @@ contract Token is IToken, AgentRoleUpgradeable, TokenStorage {
         uint256 _amount
     ) public override onlyAgent returns (bool) {
         require(balanceOf(_from) >= _amount, "sender balance too low");
+        require(_tokenCompliance.canTransfer(_from, _to, _amount), "Compliance not followed");
         uint256 freeBalance = balanceOf(_from) - (_frozenTokens[_from]);
         if (_amount > freeBalance) {
             uint256 tokensToUnfreeze = _amount - (freeBalance);
@@ -505,6 +510,7 @@ contract Token is IToken, AgentRoleUpgradeable, TokenStorage {
      *  @dev See {IToken-setIdentityRegistry}.
      */
     function setIdentityRegistry(address _identityRegistry) public override onlyOwner {
+        require(_identityRegistry != address(0), "invalid argument - zero address");
         _tokenIdentityRegistry = IIdentityRegistry(_identityRegistry);
         emit IdentityRegistryAdded(_identityRegistry);
     }
